@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1f1a2e">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Perfumes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Mis Perfumes</title>
 <style>
   :root{
@@ -53,6 +60,10 @@
   .chip a{color:var(--bad);cursor:pointer;font-weight:700}
   .sum{margin-top:12px;padding:10px;border-radius:10px;background:var(--bg);font-weight:600}
   .hidden{display:none}
+  #banner{position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));max-width:696px;margin:0 auto;z-index:10;background:var(--ink);color:var(--bg);border-radius:12px;padding:10px 12px;display:none;align-items:center;justify-content:space-between;gap:10px;font-size:14px;box-shadow:0 4px 18px rgba(0,0,0,.3)}
+  #banner.on{display:flex}
+  #banner button{padding:7px 12px;font-size:14px;white-space:nowrap}
+  #banner .x{background:transparent;color:inherit;opacity:.7}
 </style>
 </head>
 <body>
@@ -62,6 +73,7 @@
 </header>
 <main id="app"></main>
 <nav id="nav"></nav>
+<div id="banner"><span id="banner-msg"></span><span style="display:flex;gap:6px"><button class="x" onclick="hideBanner()">Luego</button><button id="banner-btn"></button></span></div>
 
 <script src="firebase-config.js" onerror="void 0"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" onerror="void 0"></script>
@@ -402,6 +414,11 @@ function mas(){
   <div class="card"><b>Moneda</b>
     <label>Símbolo</label><input value="${esc(S.currency)}" maxlength="4" onchange="S.currency=this.value||'$';save();render()">
   </div>
+  <div class="card"><b>La app</b>
+    <div class="hint">Instálala para abrirla desde la pantalla de inicio, como cualquier otra app. Las mejoras llegan solas; también puedes buscarlas a mano.</div>
+    ${isStandalone()?'':'<button class="full" onclick="installApp()">📲 Instalar en mi pantalla de inicio</button>'}
+    <button class="full ghost" onclick="checkUpdate()">🔄 Buscar actualización</button>
+  </div>
   <div class="card"><b>Respaldo</b>
     <div class="hint">Los datos se guardan solo en este teléfono/navegador. Descarga un respaldo de vez en cuando.</div>
     <button class="full" onclick="exportJSON()">⬇️ Descargar respaldo</button>
@@ -444,6 +461,50 @@ function importJSON(inp){
 
 render();
 initSync();
+
+/* ---------- INSTALAR COMO APP + ACTUALIZACIONES ---------- */
+let installEvt=null;
+function showBanner(msg,label,fn){
+  document.getElementById('banner-msg').textContent=msg;
+  const b=document.getElementById('banner-btn');b.textContent=label;b.onclick=fn;
+  document.getElementById('banner').classList.add('on');
+}
+function hideBanner(){document.getElementById('banner').classList.remove('on')}
+const isStandalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent);
+
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault();installEvt=e;
+  if(!isStandalone())showBanner('📲 Instala la app en tu pantalla de inicio','Instalar',installApp);
+});
+window.addEventListener('appinstalled',()=>{installEvt=null;hideBanner()});
+async function installApp(){
+  if(installEvt){installEvt.prompt();await installEvt.userChoice;installEvt=null;hideBanner()}
+  else if(isIOS())alert('En iPhone: toca el botón Compartir (cuadrito con flecha) y luego "Agregar a pantalla de inicio".');
+  else alert('Abre el menú del navegador (⋮) y elige "Instalar app" o "Agregar a pantalla de inicio".');
+}
+function checkUpdate(){
+  if(!('serviceWorker' in navigator))return alert('Este navegador no soporta actualizaciones automáticas.');
+  navigator.serviceWorker.getRegistration().then(r=>{
+    if(!r)return alert('Aún no está lista. Intenta de nuevo en unos segundos.');
+    r.update().then(()=>{if(!r.waiting&&!r.installing)alert('Ya tienes la última versión ✓')});
+  });
+}
+
+if('serviceWorker' in navigator&&location.protocol.startsWith('http')){
+  navigator.serviceWorker.register('sw.js').then(reg=>{
+    const offer=w=>showBanner('🔄 Hay una versión nueva de la app','Actualizar',()=>w.postMessage('skipWaiting'));
+    if(reg.waiting&&navigator.serviceWorker.controller)offer(reg.waiting);
+    reg.addEventListener('updatefound',()=>{
+      const w=reg.installing;
+      w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller)offer(w)});
+    });
+    setInterval(()=>reg.update(),30*60*1000);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)reg.update()});
+  }).catch(()=>{});
+  let reloading=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(reloading)return;reloading=true;location.reload()});
+}
 </script>
 </body>
 </html>
