@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f1a2e">
+<title>Mis Perfumes</title>
+<style>
+  :root{
+    --bg:#f6f4f8; --card:#fff; --ink:#1f1a2e; --muted:#6f6a7c; --line:#e6e2ee;
+    --accent:#6c3fc5; --good:#1a8f5b; --bad:#d23b4b; --warn:#c77d0a;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#14111d; --card:#201b2e; --ink:#f1eef8; --muted:#a39db3; --line:#332d45; --accent:#9b78f0; --good:#43c78a; --bad:#ff6b7a; --warn:#f0b04a}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,system-ui,Segoe UI,Roboto,sans-serif;padding-bottom:90px}
+  header{padding:18px 16px 6px;max-width:720px;margin:0 auto}
+  h1{margin:0;font-size:22px}
+  main{max-width:720px;margin:0 auto;padding:8px 16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+  .stat small{color:var(--muted);display:block}
+  .stat b{font-size:20px}
+  .big b{font-size:26px}
+  .good{color:var(--good)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+  label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+  input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font-size:16px}
+  button{border:0;border-radius:10px;padding:11px 14px;font-size:16px;font-weight:600;background:var(--accent);color:#fff;cursor:pointer}
+  button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line)}
+  button.small{padding:6px 10px;font-size:13px}
+  button.danger{background:transparent;color:var(--bad);border:1px solid var(--line)}
+  .full{width:100%;margin-top:14px}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 0;border-top:1px solid var(--line)}
+  .row:first-child{border-top:0}
+  .row .l{min-width:0}
+  .row .l div:first-child{font-weight:600}
+  .row .l small{color:var(--muted)}
+  .row .r{text-align:right;white-space:nowrap}
+  .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom)}
+  nav button{flex:1;background:none;color:var(--muted);border-radius:0;padding:12px 0;font-size:12px;font-weight:600}
+  nav button span{display:block;font-size:20px}
+  nav button.on{color:var(--accent)}
+  .tag{font-size:11px;padding:2px 8px;border-radius:99px;background:var(--bg);border:1px solid var(--line)}
+  .empty{color:var(--muted);text-align:center;padding:18px 0}
+  .hint{font-size:13px;color:var(--muted)}
+  .seg{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+  .seg button{flex:1;background:var(--bg);color:var(--ink);border:1px solid var(--line)}
+  .seg button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--line);border-radius:99px;padding:5px 10px;font-size:13px}
+  .chip a{color:var(--bad);cursor:pointer;font-weight:700}
+  .sum{margin-top:12px;padding:10px;border-radius:10px;background:var(--bg);font-weight:600}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<header style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+  <div><h1>🧴 Mis Perfumes</h1><div class="hint" id="sub"></div></div>
+  <div id="acct" style="text-align:right"></div>
+</header>
+<main id="app"></main>
+<nav id="nav"></nav>
+
+<script src="firebase-config.js" onerror="void 0"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" onerror="void 0"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" onerror="void 0"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js" onerror="void 0"></script>
+<script>
+const KEY='perfumes-v2';
+const TABS=[['resumen','📊','Resumen'],['venta','💰','Vender'],['compra','🛒','Comprar'],['cat','📖','Catálogo'],['mas','⚙️','Más']];
+let S=load(), tab='resumen', period='mes';
+let V={pid:'',opt:0,times:1,qty:1,total:'',client:'',date:'',paid:true};
+let C={pid:'new'};
+
+function load(){
+  try{
+    let d=JSON.parse(localStorage.getItem(KEY));
+    if(d&&d.products)return d;
+  }catch(e){}
+  return {products:[],sales:[],purchases:[],expenses:[],currency:'$'};
+}
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){alert('No se pudo guardar. Revisa el espacio del navegador.')}}
+function save(){S.updatedAt=Date.now();persist();schedulePush()}
+
+/* ---------- SYNC (Google + Firebase) ---------- */
+let user=null, fdb=null, unsub=null, pushTimer=null, syncState='';
+const hasData=d=>!!(d&&(d.products.length||d.sales.length||d.purchases.length||d.expenses.length));
+const fbReady=()=>!!(window.FIREBASE_CONFIG&&typeof firebase!=='undefined');
+const userRef=()=>fdb.collection('users').doc(user.uid);
+
+function initSync(){
+  renderAcct();
+  if(!fbReady())return;
+  firebase.initializeApp(FIREBASE_CONFIG);
+  fdb=firebase.firestore();
+  firebase.auth().getRedirectResult().catch(e=>alert('No se pudo iniciar sesión: '+e.message));
+  firebase.auth().onAuthStateChanged(u=>{user=u;if(u)startSync();else stopSync();renderAcct()});
+}
+async function signIn(){
+  const prov=new firebase.auth.GoogleAuthProvider();
+  try{await firebase.auth().signInWithPopup(prov)}
+  catch(e){
+    if(e.code==='auth/popup-blocked'||e.code==='auth/operation-not-supported-in-this-environment')firebase.auth().signInWithRedirect(prov);
+    else if(e.code!=='auth/popup-closed-by-user'&&e.code!=='auth/cancelled-popup-request')alert('No se pudo iniciar sesión: '+e.message);
+  }
+}
+function signOut(){
+  if(!confirm('¿Cerrar sesión? Tus datos quedan guardados en este dispositivo y en la nube.'))return;
+  firebase.auth().signOut();
+}
+function adopt(r){
+  r.syncedUid=user.uid;S=r;persist();
+  const a=document.activeElement;
+  if(a&&/INPUT|SELECT/.test(a.tagName))setTimeout(()=>adopt2(),3000);else render();
+}
+function adopt2(){const a=document.activeElement;if(a&&/INPUT|SELECT/.test(a.tagName))setTimeout(adopt2,3000);else render()}
+async function startSync(){
+  syncState='Sincronizando…';renderAcct();
+  try{
+    const snap=await userRef().get();
+    const remote=snap.exists?JSON.parse(snap.data().data):null;
+    const remoteHas=hasData(remote), localHas=hasData(S);
+    let useRemote=false;
+    if(remoteHas){
+      if(!localHas)useRemote=true;
+      else if(S.syncedUid!==user.uid){
+        if(!confirm('Tu cuenta de Google ya tiene datos guardados en la nube.\n\nAceptar = usar los de la nube (se reemplazan los de este dispositivo).\nCancelar = no iniciar sesión y dejar este dispositivo como está.')){firebase.auth().signOut();return}
+        useRemote=true;
+      }else useRemote=(remote.updatedAt||0)>(S.updatedAt||0);
+    }
+    if(useRemote)adopt(remote);
+    else{S.syncedUid=user.uid;persist();if(localHas)await pushNow()}
+    if(unsub)unsub();
+    unsub=userRef().onSnapshot(s=>{
+      if(!s.exists||s.metadata.hasPendingWrites)return;
+      const r=JSON.parse(s.data().data);
+      if((r.updatedAt||0)>(S.updatedAt||0))adopt(r);
+    },e=>{syncState='Sin conexión';renderAcct()});
+    syncState='Sincronizado ✓';
+  }catch(e){syncState='Error al sincronizar';console.error(e)}
+  renderAcct();
+}
+function stopSync(){if(unsub)unsub();unsub=null;syncState=''}
+function schedulePush(){if(!user||!fdb)return;clearTimeout(pushTimer);syncState='Guardando…';renderAcct();pushTimer=setTimeout(pushNow,800)}
+async function pushNow(){
+  if(!user)return;
+  try{
+    await userRef().set({data:JSON.stringify({...S,syncedUid:undefined}),updatedAt:S.updatedAt||0});
+    syncState='Sincronizado ✓';
+  }catch(e){syncState='Error al sincronizar';console.error(e)}
+  renderAcct();
+}
+function renderAcct(){
+  const el=document.getElementById('acct');if(!el)return;
+  if(!fbReady()){el.innerHTML='';return}
+  el.innerHTML=user
+    ?`<div class="hint">${esc(user.displayName||user.email)}</div><div class="hint">${syncState}</div><button class="small ghost" onclick="signOut()">Salir</button>`
+    :`<button class="small" onclick="signIn()">Entrar con Google</button><div class="hint" style="margin-top:4px">para ver tus datos en otros equipos</div>`;
+}
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money=n=>(n<0?'-':'')+S.currency+Math.abs(Math.round(n)).toLocaleString('es-CL');
+const today=()=>{const d=new Date();return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
+const fdate=d=>new Date(d+'T00:00').toLocaleDateString('es',{day:'numeric',month:'short'});
+const prod=id=>S.products.find(p=>p.id===id);
+const num=x=>{const n=parseFloat(String(x).replace(/\./g,'').replace(',','.'));return isFinite(n)?n:NaN};
+const sum=(a,f)=>a.reduce((t,x)=>t+f(x),0);
+const val=id=>document.getElementById(id).value;
+
+function inPeriod(d){
+  if(period==='todo')return true;
+  const t=today();
+  if(period==='mes')return d.slice(0,7)===t.slice(0,7);
+  const a=new Date(t+'T00:00');a.setDate(a.getDate()-6);
+  return new Date(d+'T00:00')>=a;
+}
+
+function render(){
+  document.getElementById('nav').innerHTML=TABS.map(([k,i,l])=>`<button class="${tab===k?'on':''}" onclick="go('${k}')"><span>${i}</span>${l}</button>`).join('');
+  document.getElementById('app').innerHTML=({resumen,venta,compra,cat,mas})[tab]();
+  document.getElementById('sub').textContent=new Date().toLocaleDateString('es',{weekday:'long',day:'numeric',month:'long'});
+  if(tab==='venta')updSale();
+  if(tab==='compra')updBuy();
+}
+function go(t){tab=t;render();scrollTo(0,0)}
+
+/* ---------- RESUMEN ---------- */
+function resumen(){
+  const sales=S.sales.filter(s=>inPeriod(s.date));
+  const exps=S.expenses.filter(e=>inPeriod(e.date));
+  const ventas=sum(sales,s=>s.total);
+  const costo=sum(sales,s=>s.cost*s.qty);
+  const gastos=sum(exps,e=>e.amount);
+  const bruta=ventas-costo, neta=bruta-gastos;
+  const porCobrar=sum(S.sales.filter(s=>!s.paid),s=>s.total);
+  const invVal=sum(S.products,p=>p.cost*p.stock);
+  const bajos=S.products.filter(p=>p.stock<=2);
+  const top={};sales.forEach(s=>{top[s.pid]=(top[s.pid]||0)+s.total-s.cost*s.qty});
+  const ranking=Object.entries(top).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  return `
+  <div class="seg">${[['semana','7 días'],['mes','Este mes'],['todo','Todo']].map(([k,l])=>`<button class="${period===k?'on':''}" onclick="period='${k}';render()">${l}</button>`).join('')}</div>
+  <div class="card stat big" style="margin-top:12px"><small>Ganancia real (después de gastos)</small><b class="${neta>=0?'good':'bad'}">${money(neta)}</b></div>
+  <div class="grid">
+    <div class="stat"><small>Vendido</small><b>${money(ventas)}</b></div>
+    <div class="stat"><small>Costo de lo vendido</small><b>${money(costo)}</b></div>
+    <div class="stat"><small>Ganancia bruta</small><b class="${bruta>=0?'good':'bad'}">${money(bruta)}</b></div>
+    <div class="stat"><small>Otros gastos</small><b>${money(gastos)}</b></div>
+    <div class="stat"><small>Por cobrar (fiado)</small><b class="warn">${money(porCobrar)}</b></div>
+    <div class="stat"><small>Inventario (a costo)</small><b>${money(invVal)}</b></div>
+  </div>
+  ${bajos.length?`<div class="card"><b class="warn">⚠️ Se está acabando</b>${bajos.map(p=>`<div class="row"><div class="l"><div>${esc(p.name)}</div></div><div class="r">${p.stock} u.</div></div>`).join('')}</div>`:''}
+  ${ranking.length?`<div class="card"><b>🏆 Los que más dejan</b>${ranking.map(([id,g])=>`<div class="row"><div class="l"><div>${esc(prod(id)?.name||'(borrado)')}</div></div><div class="r good">${money(g)}</div></div>`).join('')}</div>`:''}
+  ${!S.products.length?'<div class="card empty">Empieza en 🛒 Comprar registrando lo que compraste por mayor.</div>':''}`;
+}
+
+/* ---------- COMPRAR ---------- */
+function compra(){
+  const list=[...S.purchases].sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id)).slice(0,30);
+  return `
+  <div class="card"><b>Registrar compra</b>
+    <div class="hint">Pon cuánto pagó en total y cuántas unidades llegaron. El costo de cada una se calcula solo.</div>
+    <label>Perfume</label>
+    <select id="c-p" onchange="C.pid=this.value;render()">
+      <option value="new">➕ Perfume nuevo</option>
+      ${S.products.map(p=>`<option value="${p.id}" ${C.pid===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
+    </select>
+    <div id="c-newbox" class="${C.pid==='new'?'':'hidden'}"><label>Nombre del perfume</label><input id="c-n" placeholder="Ej: Sauvage 100ml"></div>
+    <div class="grid">
+      <div><label>Unidades</label><input id="c-q" type="number" inputmode="numeric" min="1" oninput="updBuy()"></div>
+      <div><label>Costo total pagado</label><input id="c-t" type="number" inputmode="decimal" step="any" oninput="updBuy()"></div>
+    </div>
+    <label>Fecha</label><input id="c-d" type="date" value="${today()}">
+    <div class="sum" id="c-sum">—</div>
+    <button class="full" onclick="addBuy()">Guardar compra</button>
+  </div>
+  <div class="card"><b>Compras recientes</b>
+    ${list.length?list.map(c=>`<div class="row"><div class="l"><div>${esc(c.name)} ×${c.qty}</div><small>${fdate(c.date)} · ${money(c.total/c.qty)} c/u</small></div><div class="r">${money(c.total)}</div></div>`).join(''):'<div class="empty">Aún no hay compras</div>'}
+  </div>`;
+}
+function updBuy(){
+  const el=document.getElementById('c-sum');if(!el)return;
+  const q=parseInt(val('c-q')),t=num(val('c-t'));
+  el.textContent=q>0&&t>=0?`Cada uno te sale a ${money(t/q)}`:'—';
+}
+function addBuy(){
+  const q=parseInt(val('c-q')),t=num(val('c-t')),date=val('c-d')||today();
+  if(!(q>0))return alert('Pon las unidades');
+  if(!(t>=0))return alert('Pon el costo total');
+  let p;
+  if(C.pid==='new'){
+    const name=val('c-n').trim();
+    if(!name)return alert('Pon el nombre del perfume');
+    p={id:uid(),name,cost:t/q,stock:q,options:[]};
+    S.products.push(p);
+  }else{
+    p=prod(C.pid);
+    p.cost=(p.cost*p.stock+t)/(p.stock+q); // costo promedio
+    p.stock+=q;
+  }
+  S.purchases.push({id:uid(),pid:p.id,name:p.name,qty:q,total:t,date});
+  save();
+  if(!p.options.length){C.pid='new';tab='cat';alert(`Listo. Ahora ponle los precios de venta a "${p.name}" (ej: 1 por 20.000, 2 por 35.000).`)}
+  else C.pid='new';
+  render();
+}
+
+/* ---------- CATÁLOGO ---------- */
+function cat(){
+  return `
+  <div class="card"><b>Mis perfumes</b>
+    <div class="hint">Aquí defines las ofertas de venta de cada perfume, por ejemplo 1 por 20.000 o 2 por 35.000.</div>
+    ${S.products.length?S.products.map(p=>`
+      <div class="row" style="align-items:flex-start"><div class="l"><div>${esc(p.name)}</div>
+        <small>Costo ${money(p.cost)} c/u</small>
+        <div class="acts">
+          ${p.options.length?p.options.map((o,i)=>{const g=o.total-p.cost*o.qty;return `<span class="chip">${o.qty} por ${money(o.total)} <small class="${g>=0?'good':'bad'}">(${g>=0?'+':''}${money(g)})</small> <a onclick="delOpt('${p.id}',${i})">×</a></span>`}).join(''):'<span class="hint warn">Sin precios todavía</span>'}
+        </div>
+        <div class="acts"><button class="small" onclick="addOpt('${p.id}')">+ Precio</button><button class="small ghost" onclick="editProd('${p.id}')">Editar</button><button class="small danger" onclick="delProd('${p.id}')">Borrar</button></div></div>
+        <div class="r"><b class="${p.stock<=2?'warn':''}">${p.stock}</b><div class="hint">en stock</div></div></div>`).join('')
+      :'<div class="empty">Aún no hay perfumes. Registra una compra en 🛒 Comprar.</div>'}
+  </div>`;
+}
+function addOpt(id){
+  const p=prod(id);
+  const q=parseInt(prompt(`¿Cuántas unidades en esta oferta? (ej: 1, 2, 3)`,'1'));
+  if(!(q>0))return;
+  const t=num(prompt(`¿Cuánto cobras por ${q} unidad${q>1?'es':''} en total?`));
+  if(!(t>=0))return alert('Precio inválido');
+  p.options=p.options.filter(o=>o.qty!==q);
+  p.options.push({qty:q,total:t});
+  p.options.sort((a,b)=>a.qty-b.qty);
+  save();render();
+}
+function delOpt(id,i){const p=prod(id);p.options.splice(i,1);save();render()}
+function editProd(id){
+  const p=prod(id);
+  const name=prompt('Nombre',p.name);if(name===null)return;
+  const cost=num(prompt('Costo por unidad',Math.round(p.cost*100)/100));
+  const stock=parseInt(prompt('Stock actual',p.stock));
+  if(!name.trim()||!(cost>=0)||!(stock>=0))return alert('Datos inválidos');
+  Object.assign(p,{name:name.trim(),cost,stock});save();render();
+}
+function delProd(id){
+  if(!confirm('¿Borrar este perfume? Las ventas anteriores se conservan.'))return;
+  S.products=S.products.filter(p=>p.id!==id);save();render();
+}
+
+/* ---------- VENDER ---------- */
+function venta(){
+  const avail=S.products.filter(p=>p.stock>0);
+  if(!V.date)V.date=today();
+  if(!avail.find(p=>p.id===V.pid)){V.pid=avail[0]?.id||'';V.opt=0}
+  const p=prod(V.pid);
+  const recent=[...S.sales].sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id)).slice(0,30);
+  return `
+  <div class="card">
+    <b>Nueva venta</b>
+    ${avail.length?`
+    <label>Perfume</label>
+    <select onchange="V.pid=this.value;V.opt=0;render()">${avail.map(x=>`<option value="${x.id}" ${x.id===V.pid?'selected':''}>${esc(x.name)} (${x.stock})</option>`).join('')}</select>
+    <label>¿Cómo lo vendió?</label>
+    <div class="seg">
+      ${p.options.map((o,i)=>`<button class="${V.opt===i?'on':''}" onclick="V.opt=${i};render()">${o.qty} por ${money(o.total)}</button>`).join('')}
+      <button class="${V.opt==='x'?'on':''}" onclick="V.opt='x';render()">Otro</button>
+    </div>
+    ${V.opt==='x'?`<div class="grid">
+      <div><label>Unidades</label><input type="number" inputmode="numeric" min="1" value="${V.qty}" oninput="V.qty=this.value;updSale()"></div>
+      <div><label>Total cobrado</label><input type="number" inputmode="decimal" step="any" value="${V.total}" oninput="V.total=this.value;updSale()"></div>
+    </div>`:`<label>¿Cuántas veces esta oferta?</label><input type="number" inputmode="numeric" min="1" value="${V.times}" oninput="V.times=this.value;updSale()">`}
+    <label>Cliente (opcional)</label><input value="${esc(V.client)}" oninput="V.client=this.value" placeholder="Nombre">
+    <label>Fecha</label><input type="date" value="${V.date}" oninput="V.date=this.value">
+    <div class="seg">
+      <button class="${V.paid?'on':''}" onclick="V.paid=true;render()">✅ Pagó</button>
+      <button class="${!V.paid?'on':''}" onclick="V.paid=false;render()">⏳ Fiado</button>
+    </div>
+    <div class="sum" id="v-sum">—</div>
+    <button class="full" onclick="addSale()">Registrar venta</button>`
+    :'<div class="empty">No hay perfumes con stock. Registra una compra en 🛒 Comprar.</div>'}
+  </div>
+  <div class="card"><b>Ventas recientes</b>
+    ${recent.length?recent.map(s=>`
+      <div class="row"><div class="l"><div>${esc(prod(s.pid)?.name||s.name)} ×${s.qty}</div>
+        <small>${fdate(s.date)}${s.client?' · '+esc(s.client):''} · ganas ${money(s.total-s.cost*s.qty)}</small>
+        <div class="acts">${s.paid?'':`<button class="small" onclick="markPaid('${s.id}')">Marcar pagado</button>`}<button class="small danger" onclick="delSale('${s.id}')">Borrar</button></div></div>
+        <div class="r"><div>${money(s.total)}</div>${s.paid?'':'<span class="tag warn">Fiado</span>'}</div></div>`).join('')
+      :'<div class="empty">Aún no hay ventas</div>'}
+  </div>`;
+}
+function saleCalc(){
+  const p=prod(V.pid);if(!p)return null;
+  if(V.opt==='x')return {qty:parseInt(V.qty),total:num(V.total)};
+  const o=p.options[V.opt];if(!o)return null;
+  const t=parseInt(V.times);
+  return {qty:o.qty*t,total:o.total*t};
+}
+function updSale(){
+  const el=document.getElementById('v-sum');if(!el)return;
+  const p=prod(V.pid),c=saleCalc();
+  if(!p||!c||!(c.qty>0)||!(c.total>=0)){el.textContent=p&&!p.options.length&&V.opt!=='x'?'Este perfume no tiene precios. Usa "Otro" o créalos en 📖 Catálogo.':'—';return}
+  const g=c.total-p.cost*c.qty;
+  el.innerHTML=`${c.qty} unidad${c.qty>1?'es':''} · Cobras ${money(c.total)} · Ganas <span class="${g>=0?'good':'bad'}">${money(g)}</span>`;
+}
+function addSale(){
+  const p=prod(V.pid),c=saleCalc();
+  if(!p)return alert('Elige un perfume');
+  if(!c||!(c.qty>0))return alert('Cantidad inválida');
+  if(!(c.total>=0))return alert('Precio inválido');
+  if(c.qty>p.stock)return alert(`Solo quedan ${p.stock} de ${p.name}`);
+  p.stock-=c.qty;
+  S.sales.push({id:uid(),pid:p.id,name:p.name,qty:c.qty,total:c.total,cost:p.cost,client:V.client.trim(),date:V.date||today(),paid:V.paid});
+  V={...V,times:1,qty:1,total:'',client:'',paid:true};
+  save();render();
+}
+function markPaid(id){S.sales.find(s=>s.id===id).paid=true;save();render()}
+function delSale(id){
+  if(!confirm('¿Borrar esta venta? El stock se devuelve.'))return;
+  const s=S.sales.find(x=>x.id===id),p=prod(s.pid);if(p)p.stock+=s.qty;
+  S.sales=S.sales.filter(x=>x.id!==id);save();render();
+}
+
+/* ---------- MÁS ---------- */
+function mas(){
+  const debt=S.sales.filter(s=>!s.paid);
+  const byClient={};debt.forEach(s=>{const k=s.client||'Sin nombre';byClient[k]=(byClient[k]||0)+s.total});
+  const exps=[...S.expenses].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,20);
+  return `
+  <div class="card"><b>Quién me debe</b>
+    ${Object.keys(byClient).length?Object.entries(byClient).map(([c,t])=>`<div class="row"><div class="l"><div>${esc(c)}</div></div><div class="r warn">${money(t)}</div></div>`).join(''):'<div class="empty">Nadie 🎉</div>'}
+  </div>
+  <div class="card"><b>Otros gastos</b>
+    <div class="hint">Envíos, publicidad, bolsas… (lo que pagó por los perfumes va en 🛒 Comprar)</div>
+    <label>Concepto</label><input id="g-c" placeholder="Ej: Envío">
+    <div class="grid">
+      <div><label>Monto</label><input id="g-a" type="number" inputmode="decimal" step="any"></div>
+      <div><label>Fecha</label><input id="g-d" type="date" value="${today()}"></div>
+    </div>
+    <button class="full" onclick="addExp()">Guardar gasto</button>
+    ${exps.map(e=>`<div class="row"><div class="l"><div>${esc(e.concept)}</div><small>${fdate(e.date)}</small></div><div class="r">${money(e.amount)}<div class="acts" style="justify-content:flex-end"><button class="small danger" onclick="delExp('${e.id}')">Borrar</button></div></div></div>`).join('')}
+  </div>
+  <div class="card"><b>Moneda</b>
+    <label>Símbolo</label><input value="${esc(S.currency)}" maxlength="4" onchange="S.currency=this.value||'$';save();render()">
+  </div>
+  <div class="card"><b>Respaldo</b>
+    <div class="hint">Los datos se guardan solo en este teléfono/navegador. Descarga un respaldo de vez en cuando.</div>
+    <button class="full" onclick="exportJSON()">⬇️ Descargar respaldo</button>
+    <button class="full ghost" onclick="exportCSV()">📄 Exportar ventas (Excel/CSV)</button>
+    <button class="full ghost" onclick="document.getElementById('imp').click()">⬆️ Restaurar respaldo</button>
+    <input id="imp" type="file" accept=".json" class="hidden" onchange="importJSON(this)">
+  </div>`;
+}
+function addExp(){
+  const concept=val('g-c').trim(),amount=num(val('g-a'));
+  if(!concept||!(amount>0))return alert('Pon concepto y un monto mayor a 0');
+  S.expenses.push({id:uid(),concept,amount,date:val('g-d')||today()});save();render();
+}
+function delExp(id){if(confirm('¿Borrar gasto?')){S.expenses=S.expenses.filter(e=>e.id!==id);save();render()}}
+function download(name,text,type){
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function exportJSON(){download(`perfumes-respaldo-${today()}.json`,JSON.stringify(S),'application/json')}
+function exportCSV(){
+  const q=x=>'"'+String(x).replace(/"/g,'""')+'"';
+  const rows=[['Fecha','Perfume','Unidades','Total cobrado','Costo','Ganancia','Cliente','Pagado']]
+    .concat(S.sales.map(s=>[s.date,s.name,s.qty,s.total,s.cost*s.qty,s.total-s.cost*s.qty,s.client,s.paid?'Sí':'No']));
+  download(`ventas-${today()}.csv`,'﻿'+rows.map(r=>r.map(q).join(',')).join('\n'),'text/csv');
+}
+function importJSON(inp){
+  const f=inp.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const d=JSON.parse(r.result);
+      if(!d.products||!d.sales||!d.expenses)throw 0;
+      d.purchases=d.purchases||[];
+      d.products.forEach(p=>p.options=p.options||[]);
+      if(!confirm('Esto reemplaza los datos actuales. ¿Continuar?'))return;
+      S=d;save();render();
+    }catch(e){alert('Archivo inválido')}
+  };
+  r.readAsText(f);
+}
+
+render();
+initSync();
+</script>
+</body>
+</html>
